@@ -103,6 +103,7 @@ func (l *LogHandle) Log(args ...interface{}) {
 
 func NewLogger(name string) *LogHandle {
 	l := &LogHandle{name: name}
+	l.ReportCaller = true
 	l.Out = os.Stderr
 	l.Formatter = l
 	l.Level = logrus.InfoLevel
