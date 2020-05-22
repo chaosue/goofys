@@ -115,8 +115,8 @@ func NewBackend(bucket string, flags *FlagStorage) (cloud StorageBackend, err er
 		} else {
 			cloud, err = NewS3(bucket, flags, config)
 		}
-	} else if config, ok := flags.Backend.(*KafkaConfig); ok {
-		cloud, err = NewKafkaGoofys(flags, config)
+	} else if config, ok := flags.Backend.(*ForwarderBackendConfig); ok {
+		cloud, err = NewForwarderBackend(flags, config)
 	} else {
 		err = fmt.Errorf("Unknown backend config: %T", flags.Backend)
 	}
