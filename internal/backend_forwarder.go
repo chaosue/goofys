@@ -34,6 +34,8 @@ type ForwarderBackendLocalItemMeta struct {
 	Size         uint64    `json:"size"`
 	LastModified time.Time `json:"last_modified"`
 	IsDir        bool      `json:"is_dir"`
+	// parent's key
+	ParentDir string `json:"parent_dir"`
 	// alway empty. existence is for compabilites of other storage
 	Etag string `json:"etag"`
 	// alway empty. existence is for compabilites of other storage
@@ -165,14 +167,15 @@ func (b *ForwarderBackend) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, e
 	b.RLock()
 	defer b.RUnlock()
 	for _, m := range b.localItemMetas {
-		if strings.Index(m.Key, *param.Prefix) != 0 {
+		if m.Key != *param.Prefix && m.ParentDir+"/" != *param.Prefix && m.ParentDir != *param.Prefix {
 			continue
 		}
-		ots.Items = append(ots.Items, BlobItemOutput{
+		item := BlobItemOutput{
 			Key:          &m.Key,
 			Size:         m.Size,
 			LastModified: &m.LastModified,
-		})
+		}
+		ots.Items = append(ots.Items, item)
 	}
 	log.Infof("Ret listblobs: %+v", ots)
 	return ots, nil
@@ -253,30 +256,63 @@ func (b *ForwarderBackend) PutBlob(param *PutBlobInput) (*PutBlobOutput, error) 
 
 	}
 
-	b.Lock()
-	defer b.Unlock()
-	meta := ForwarderBackendLocalItemMeta{
-		Key:          param.Key,
-		LastModified: time.Now(),
-		IsDir:        param.DirBlob,
-	}
-	if param.Size != nil {
-		meta.Size = *param.Size
+	b.RLock()
+	var meta *ForwarderBackendLocalItemMeta
+	var ok bool
+	if meta, ok = b.localItemMetas[param.Key]; !ok {
+		meta = &ForwarderBackendLocalItemMeta{
+			Key:          param.Key,
+			LastModified: time.Now(),
+			IsDir:        param.DirBlob,
+			ParentDir:    "",
+		}
+		if param.Size != nil {
+			meta.Size = *param.Size
+		}
+		for k := range b.localItemMetas {
+			if strings.Index(param.Key, k+"/") == 0 && len(strings.Split(param.Key, "/"))-1 == len(strings.Split(k, "/")) {
+				meta.ParentDir = k
+				break
+			}
+		}
+	} else {
+		if param.Size != nil {
+			meta.Size = *param.Size
+		}
 	}
 
-	b.localItemMetas[param.Key] = &meta
+	b.RUnlock()
+
+	b.Lock()
+	b.localItemMetas[param.Key] = meta
+	b.Unlock()
 	return &PutBlobOutput{LastModified: &meta.LastModified, ETag: &meta.Etag, StorageClass: &meta.StorageClass}, nil
 }
 
 func (b *ForwarderBackend) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBlobCommitInput, error) {
 	log.Infof("MultipartBlobBegin :%+v", *param)
+
+	b.RLock()
+	var meta *ForwarderBackendLocalItemMeta
+	var ok bool
+	if meta, ok = b.localItemMetas[param.Key]; !ok {
+		meta = &ForwarderBackendLocalItemMeta{
+			Key:          param.Key,
+			LastModified: time.Now(),
+			ParentDir:    "",
+		}
+		for k := range b.localItemMetas {
+			if strings.Index(param.Key, k) == 0 && len(strings.Split(param.Key, "\\"))-1 == len(strings.Split(k, "\\")) {
+				meta.ParentDir = k
+				break
+			}
+		}
+	}
+
+	b.RUnlock()
 	b.Lock()
 	defer b.Unlock()
-	meta := &ForwarderBackendLocalItemMeta{
-		Key:          param.Key,
-		Size:         0,
-		LastModified: time.Now(),
-	}
+
 	b.localItemMetas[param.Key] = meta
 
 	return &MultipartBlobCommitInput{
@@ -306,6 +342,7 @@ func (b *ForwarderBackend) MultipartBlobAbort(param *MultipartBlobCommitInput) (
 	log.Infof("MultipartBlobAbort :%+v", *param)
 	return &MultipartBlobAbortOutput{}, nil
 }
+
 func (b *ForwarderBackend) MultipartBlobCommit(param *MultipartBlobCommitInput) (*MultipartBlobCommitOutput, error) {
 	log.Infof("MultipartBlobCommit :%+v", *param)
 	b.RLock()
@@ -320,9 +357,11 @@ func (b *ForwarderBackend) MultipartBlobCommit(param *MultipartBlobCommitInput) 
 		StorageClass: &meta.StorageClass,
 	}, nil
 }
+
 func (b *ForwarderBackend) MultipartExpire(param *MultipartExpireInput) (*MultipartExpireOutput, error) {
 	return &MultipartExpireOutput{}, nil
 }
+
 func (b *ForwarderBackend) RemoveBucket(param *RemoveBucketInput) (*RemoveBucketOutput, error) {
 	log.Infof("RemoveBucket :%+v", *param)
 	return &RemoveBucketOutput{}, nil
