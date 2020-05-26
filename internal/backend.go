@@ -43,6 +43,7 @@ type BlobItemOutput struct {
 	LastModified *time.Time
 	Size         uint64
 	StorageClass *string
+	IsDirBlob    bool
 }
 
 type HeadBlobOutput struct {

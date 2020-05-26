@@ -529,6 +529,9 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 					inode.refcnt = 0
 					fs.insertInode(parent, inode)
 				}
+				if obj.IsDirBlob {
+					inode.ToDir()
+				}
 				inode.SetFromBlobItem(&obj)
 			} else {
 				// this is a slurped up object which

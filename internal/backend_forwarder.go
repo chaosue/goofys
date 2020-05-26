@@ -174,6 +174,7 @@ func (b *ForwarderBackend) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, e
 			Key:          &m.Key,
 			Size:         m.Size,
 			LastModified: &m.LastModified,
+			IsDirBlob:    m.IsDir,
 		}
 		ots.Items = append(ots.Items, item)
 	}
